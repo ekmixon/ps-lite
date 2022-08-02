@@ -81,13 +81,13 @@ class SlaveEntry:
         for r in nnset:
             self.sock.sendint(r)
         # send prev link
-        if rprev != -1 and rprev != rank:
+        if rprev not in [-1, rank]:
             nnset.add(rprev)
             self.sock.sendint(rprev)
         else:
             self.sock.sendint(-1)
         # send next link
-        if rnext != -1 and rnext != rank:
+        if rnext not in [-1, rank]:
             nnset.add(rnext)
             self.sock.sendint(rnext)
         else:
@@ -95,14 +95,11 @@ class SlaveEntry:
         while True:
             ngood = self.sock.recvint()
             goodset = set([])
-            for i in xrange(ngood):
+            for _ in xrange(ngood):
                 goodset.add(self.sock.recvint())
             assert goodset.issubset(nnset)
             badset = nnset - goodset
-            conset = []
-            for r in badset:
-                if r in wait_conn:
-                    conset.append(r)
+            conset = [r for r in badset if r in wait_conn]
             self.sock.sendint(len(conset))
             self.sock.sendint(len(badset) - len(conset))
             for r in conset:
@@ -178,14 +175,12 @@ class RabitTracker:
         return a list starting from r
         """
         nset = set(tree_map[r])
-        cset = nset - set([parent_map[r]])
+        cset = nset - {parent_map[r]}
         if len(cset) == 0:
             return [r]
         rlst = [r]
-        cnt = 0
-        for v in cset:
+        for cnt, v in enumerate(cset, start=1):
             vlst = self.find_share_ring(tree_map, parent_map, v)
-            cnt += 1
             if cnt == len(cset):
                 vlst.reverse()
             rlst += vlst
@@ -219,18 +214,12 @@ class RabitTracker:
             k = ring_map[k][1]
             rmap[k] = i + 1
 
-        ring_map_ = {}
-        tree_map_ = {}
-        parent_map_ ={}
-        for k, v in ring_map.items():
-            ring_map_[rmap[k]] = (rmap[v[0]], rmap[v[1]])
-        for k, v in tree_map.items():
-            tree_map_[rmap[k]] = [rmap[x] for x in v]
-        for k, v in parent_map.items():
-            if k != 0:
-                parent_map_[rmap[k]] = rmap[v]
-            else:
-                parent_map_[rmap[k]] = -1
+        ring_map_ = {rmap[k]: (rmap[v[0]], rmap[v[1]]) for k, v in ring_map.items()}
+        tree_map_ = {rmap[k]: [rmap[x] for x in v] for k, v in tree_map.items()}
+        parent_map_ = {
+            rmap[k]: rmap[v] if k != 0 else -1 for k, v in parent_map.items()
+        }
+
         return tree_map_, parent_map_, ring_map_
 
     def handle_print(self,slave, msg):
@@ -263,9 +252,9 @@ class RabitTracker:
                 shutdown[s.rank] = s
                 logging.debug('Recieve %s signal from %d' % (s.cmd, s.rank))
                 continue
-            assert s.cmd == 'start' or s.cmd == 'recover'
+            assert s.cmd in ['start', 'recover']
             # lazily initialize the slaves
-            if tree_map == None:
+            if tree_map is None:
                 assert s.cmd == 'start'
                 if s.world_size > 0:
                     nslave = s.world_size
@@ -273,7 +262,7 @@ class RabitTracker:
                 # set of nodes that is pending for getting up
                 todo_nodes = range(nslave)
             else:
-                assert s.world_size == -1 or s.world_size == nslave
+                assert s.world_size in [-1, nslave]
             if s.cmd == 'recover':
                 assert s.rank >= 0
 
@@ -302,7 +291,9 @@ class RabitTracker:
                     wait_conn[rank] = s
         logging.info('@tracker All nodes finishes job')
         self.end_time = time.time()
-        logging.info('@tracker %s secs between node start and job finish' % str(self.end_time - self.start_time))
+        logging.info(
+            f'@tracker {str(self.end_time - self.start_time)} secs between node start and job finish'
+        )
 
     def start(self, nslave):
         def run():
@@ -330,7 +321,7 @@ class PSTracker:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         max_retry = 100
 
-        for i in range(0, max_retry):
+        for i in range(max_retry):
             if i + 1 == max_retry:
                 raise Exception('the schduler is faild to bind a port')
             port = random.randint(port, port_end)
@@ -404,7 +395,7 @@ def submit(nworker, nserver, fun_submit, hostIP = 'auto', pscmd = None):
     # start the root
     if nserver == 0:
         rabit = RabitTracker(hostIP = hostIP, nslave = nworker)
-        envs.update(rabit.slave_envs())
+        envs |= rabit.slave_envs()
         rabit.start(nworker)
     else:
         pserver = PSTracker(hostIP = hostIP, cmd=pscmd, envs = envs)
@@ -422,7 +413,7 @@ def submit(nworker, nserver, fun_submit, hostIP = 'auto', pscmd = None):
 def config_logger(args):
     FORMAT = '%(asctime)s %(levelname)s %(message)s'
     level = args.log_level if 'log_level' in args else 'DEBUG'
-    level = eval('logging.' + level)
+    level = eval(f'logging.{level}')
     if 'log_file' not in args or args.log_file is None:
         logging.basicConfig(format=FORMAT, level = level)
     else:

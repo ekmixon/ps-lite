@@ -42,12 +42,12 @@ def get_mpi_env(envs):
     cmd = ''
     if 'Open MPI' in mpi_ver:
         for k, v in envs.items():
-            cmd += ' -x %s=%s' % (k, str(v))
+            cmd += f' -x {k}={str(v)}'
     elif 'mpich' in mpi_ver:
         for k, v in envs.items():
-            cmd += ' -env %s %s' % (k, str(v))
+            cmd += f' -env {k} {str(v)}'
     else:
-        raise Exception('unknow mpi version %s' % (mpi_ver))
+        raise Exception(f'unknow mpi version {mpi_ver}')
 
     return cmd
 
@@ -66,7 +66,7 @@ def mpi_submit(nworker, nserver, pass_envs):
 
     cmd = ''
     if args.hostfile is not None:
-        cmd = '--hostfile %s' % (args.hostfile)
+        cmd = f'--hostfile {args.hostfile}'
     cmd += ' ' + ' '.join(args.command) + ' ' + ' '.join(unknown)
 
     # start servers
